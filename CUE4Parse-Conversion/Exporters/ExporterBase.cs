@@ -3,6 +3,7 @@ using CUE4Parse.FileProvider.Objects;
 using CUE4Parse.UE4.Assets.Exports;
 using CUE4Parse.Utils;
 using Serilog;
+using CUE4Parse.UE4.VirtualFileSystem;
 
 namespace CUE4Parse_Conversion.Exporters;
 
@@ -13,6 +14,7 @@ public interface IExporter
     public string ObjectName { get; }
     public string ObjectPath { get; }
     public string ClassName { get; }
+    public string VfsName { get; set; }
 
     public Task<ExportResult> ExportAsync(CancellationToken ct = default);
 }
@@ -26,13 +28,14 @@ public abstract class ExporterBase : IExporter
     public string ObjectName { get; }
     public string ObjectPath { get; }
     public string ClassName { get; }
+    public string VfsName { get; set; }
 
     internal ExportSession? _session = null;
     protected ExportSession Session => _session ?? throw new InvalidOperationException("Exporter must be added to an ExportSession before use");
 
     protected internal ILogger Log { get; }
 
-    private ExporterBase(string packagePath, string objectName, string className)
+    private ExporterBase(string packagePath, string objectName, string className, string vfsName)
     {
         PackagePath = packagePath;
         PackageDirectory = PackagePath.Contains('/') ? PackagePath.SubstringBeforeLast('/') : string.Empty;
@@ -44,6 +47,7 @@ public abstract class ExporterBase : IExporter
         ObjectName = objectName;
         ObjectPath = PackagePath + '.' + ObjectName;
         ClassName = className;
+        VfsName = vfsName;
 
         Log = Serilog.Log.ForContext(GetType())
             .ForContext(nameof(ObjectPath), ObjectPath)
@@ -51,12 +55,12 @@ public abstract class ExporterBase : IExporter
             .ForContext("ExporterV2", true);
     }
 
-    protected ExporterBase(UObject export, string? className = null) : this(BuildPackagePath(export), export.Name, className ?? export.ExportType)
+    protected ExporterBase(UObject export, string? className = null) : this(BuildPackagePath(export), export.Name, className ?? export.ExportType, "")
     {
 
     }
 
-    protected internal ExporterBase(GameFile file, string className) : this(file.PathWithoutExtension, file.NameWithoutExtension, className)
+    protected internal ExporterBase(GameFile file, string className) : this(file.PathWithoutExtension, file.NameWithoutExtension, className, (file as VfsEntry)?.Vfs.Name ?? "")
     {
         if (file.IsUePackagePayload)
             throw new ArgumentException("GameFile must not be a UE package payload file", nameof(file));
@@ -98,7 +102,9 @@ public abstract class ExporterBase : IExporter
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     protected virtual (string, string) ResolveOutputPath(ExportFile file)
     {
-        return ($"{ObjectName}{file.NameSuffix}.{file.Extension}", Session.ResolveOutputPath(SavePath, file.Extension, file.NameSuffix));
+        var FullPath = $"{SavePath}_{VfsName}";
+        // var FullPath = $"{VfsName}/{SavePath}";
+        return ($"{ObjectName}{file.NameSuffix}.{file.Extension}", Session.ResolveOutputPath(FullPath, file.Extension, file.NameSuffix));
     }
 
     protected string Resolve(UObject obj, string extension) => Resolve(obj, SaveDirectory, extension);
