@@ -44,29 +44,42 @@ public sealed class ExportSession(Action<StreamingLevelFilterArgs, CancellationT
 
     public ExportSession Add(UObject export)
     {
-        return export switch
-        {
-            UTexture texture => Add(new TextureExporter(texture)),
-            UMaterialInterface material => Add(new MaterialExporter(material)),
-            USkeletalMesh skeletalMesh => Add(new SkeletalMeshExporter(skeletalMesh)),
-            UStaticMesh staticMesh => Add(new StaticMeshExporter(staticMesh)),
-            UGeometryCollection geometryCollection => Add(new GeometryCollectionExporter(geometryCollection)),
-            USkeleton skeleton => Add(new SkeletonExporter(skeleton)),
-            UPoseAsset poseAsset => Add(new PoseAssetExporter(poseAsset)),
-            UAnimationAsset animation => Add(new AnimationExporter(animation)),
-            UDNAAsset dna => Add(new DnaExporter(dna)),
-            UWorld world => Add(new WorldExporter(world)),
-            ALandscapeProxy landscape => Add(new LandscapeMeshExporter(landscape)),
-            ULandscapeComponent landscape => Add(new LandscapeMeshExporter2(landscape)),
-            USplineMeshComponent spline => Add(new SplineMeshExporter(spline)),
-            _ => throw new NotSupportedException($"Could not create exporter for export of type '{export.GetType().Name}'.")
-        };
+        return Add(export, "");
     }
 
     public ExportSession Add(ExporterBase exporter)
     {
+        return Add(exporter, "");
+    }
+
+    public ExportSession Add(UObject export, string vfsName)
+    {
+        return export switch
+        {
+            UTexture texture => Add(new TextureExporter(texture), vfsName),
+            UMaterialInterface material => Add(new MaterialExporter(material), vfsName),
+            USkeletalMesh skeletalMesh => Add(new SkeletalMeshExporter(skeletalMesh), vfsName),
+            UStaticMesh staticMesh => Add(new StaticMeshExporter(staticMesh), vfsName),
+            UGeometryCollection geometryCollection => Add(new GeometryCollectionExporter(geometryCollection), vfsName),
+            USkeleton skeleton => Add(new SkeletonExporter(skeleton), vfsName),
+            UPoseAsset poseAsset => Add(new PoseAssetExporter(poseAsset), vfsName),
+            UAnimationAsset animation => Add(new AnimationExporter(animation), vfsName),
+            UDNAAsset dna => Add(new DnaExporter(dna), vfsName),
+            UWorld world => Add(new WorldExporter(world), vfsName),
+            ALandscapeProxy landscape => Add(new LandscapeMeshExporter(landscape), vfsName),
+            ULandscapeComponent landscape => Add(new LandscapeMeshExporter2(landscape), vfsName),
+            USplineMeshComponent spline => Add(new SplineMeshExporter(spline), vfsName),
+            _ => throw new NotSupportedException($"Could not create exporter for export of type '{export.GetType().Name}'.")
+        };
+    }
+
+    public ExportSession Add(ExporterBase exporter, string vfsName)
+    {
+        if (exporter.VfsName == "") exporter.VfsName = vfsName;
+
         // TODO: this prevents 2 exporters messing with the same file from being enqueued in the same run (e.g. MeshExporter / RawDataExporter)
-        if (!_paths.TryAdd(exporter.ObjectPath, 0)) return this;
+        if (!_paths.TryAdd(exporter.VfsName + exporter.ObjectPath, 0))
+            return this;
 
         exporter._session = this;
         _roots.Enqueue(exporter);
@@ -119,7 +132,7 @@ public sealed class ExportSession(Action<StreamingLevelFilterArgs, CancellationT
                 while (_roots.TryDequeue(out var exporter))
                 {
                     ct.ThrowIfCancellationRequested();
-                    if (_paths.ContainsKey(exporter.ObjectPath)) // false = exporter was added but then manually removed
+                    if (_paths.ContainsKey(exporter.VfsName + exporter.ObjectPath)) // false = exporter was added but then manually removed
                         current.Add(exporter);
                 }
                 if (current.Count == 0) break;
